@@ -78,7 +78,7 @@ class Iseed
         $data = $this->getData($table, $max, $exclude, $orderBy, $direction, $whereClause);
 
         // Repack the data
-        $dataArray = $this->repackSeedData($data);
+        $dataArray = $this->repackSeedData($data, $table);
 
         // Generate class name
         $className = $this->generateClassName($table, $prefix, $suffix);
@@ -159,7 +159,7 @@ class Iseed
      * @param  array|object $data
      * @return array
      */
-    public function repackSeedData($data)
+    public function repackSeedData($data, $tableName)
     {
         if (!is_array($data)) {
             $data = $data->toArray();
@@ -169,12 +169,31 @@ class Iseed
             foreach ($data as $row) {
                 $rowArray = array();
                 foreach ($row as $columnName => $columnValue) {
-                    $rowArray[$columnName] = $columnValue;
+                    $rowArray[$columnName] = $this->filterColumnValue($columnValue, $tableName, $columnName);
                 }
                 $dataArray[] = $rowArray;
             }
         }
         return $dataArray;
+    }
+    
+    /**
+     * filterColumnValue
+     *
+     * @param  mixed $columnValue
+     * @param  mixed $tableName
+     * @param  mixed $columnName
+     * @return void
+     */
+    private function filterColumnValue($columnValue, $tableName, $columnName)
+    {
+        $columnCallback = config('iseed::config.columnCallback');
+
+        if ($columnCallback instanceof \Closure) {
+            return $columnCallback($columnValue, $tableName, $columnName);
+        } else {
+            return $columnValue;
+        }
     }
 
     /**
@@ -313,6 +332,15 @@ class Iseed
             ? var_export($array, true)
             : preg_replace("/[0-9]+ \=\>/i", '', var_export($array, true));
 
+        // Replace quoted strings that are wrapped in [php]...[/php]
+        $content = preg_replace_callback(
+            "/'\\[php\\](.*?)\\[\\/php\\]'/s",
+            function ($matches) {
+                return str_replace("\\\\", "\\", str_replace("\\'", "'", $matches[1]));
+            },
+            $content
+        );
+
         $lines = explode("\n", $content);
 
         $inString = false;
@@ -321,7 +349,7 @@ class Iseed
             $lines[$i] = ltrim($lines[$i]);
 
             //Check for closing bracket
-            if (strpos($lines[$i], ')') !== false) {
+            if (strpos($lines[$i], ')') !== false && strpos($lines[$i], '(') === false) {
                 $tabCount--;
             }
 
@@ -344,7 +372,7 @@ class Iseed
             }
 
             //check for openning bracket
-            if (strpos($lines[$i], '(') !== false) {
+            if (strpos($lines[$i], '(') !== false && strpos($lines[$i], ')') === false) {
                 $tabCount++;
             }
         }
